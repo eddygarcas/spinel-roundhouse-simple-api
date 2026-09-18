@@ -167,21 +167,20 @@ Spinel-compatible program, and Spinel compiles the emitted program—not the
 original Rails application.
 
 Start with the strict checker and treat every error, warning, and survey gap as
-a compatibility task:
+a compatibility task. With local `roundhouse/` and `spinel/` checkouts, the
+complete sequence from the repository root is:
 
 ```bash
-roundhouse/target/release/roundhouse-check path/to/your-rails-app
-```
-
-Do not run Spinel directly against a normal Rails project. After the strict
-check is clean, emit and compile through Roundhouse:
-
-```bash
+roundhouse/target/release/roundhouse-check my-api
 roundhouse/target/release/roundhouse --target spinel \
-  -o artifacts/my-api-spinel path/to/your-rails-app
+  -o artifacts/my-api-spinel my-api
 cd artifacts/my-api-spinel
-PATH="/path/to/spinel/bin:$PATH" spin build
+PATH="$(cd ../../spinel && pwd)/bin:$PATH" spin build
 ```
+
+Do not run `spinel my-api` directly against a normal Rails project. Spinel
+builds the output emitted by Roundhouse; `spin build` is therefore run only
+after changing into `artifacts/my-api-spinel`.
 
 The executable is normally `build/bin/blog`.
 
