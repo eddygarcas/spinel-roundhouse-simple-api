@@ -1,123 +1,137 @@
-# Binary API / Backoffice Compilation Guide
+# Spinel / Roundhouse Simple API Guide
 
-## Mission
+## Purpose
 
-This repository is the integration workspace for evaluating whether the
-`rzilient-club/backoffice` Rails application can be transformed by
-[Roundhouse](https://github.com/rubys/roundhouse) into a Spinel-backed native
-binary. The intended deliverable is a reproducible build and an evidence-based
-compatibility report; it is **not** a claim that an arbitrary Rails application
-can be compiled unchanged.
-
-Roundhouse is the Rails-aware source analyzer/transpiler. Spinel is the
-Ruby-ahead-of-time compiler that turns the Ruby-shaped output of Roundhouse
-into a standalone native executable. Do not try to compile the original Rails
-application directly with `spinel`.
-
-## Workspace layout
-
-Keep source, tooling, generated output, and notes separate:
+This public repository is a minimal proof of concept for compiling a Rails API
+into a native executable. The application source is `simple-api/`, with
+`GET /`, `GET /ping`, and `GET /health`.
 
 ```text
-backoffice/              # Git checkout of rzilient-club/backoffice
-roundhouse/              # Pinned upstream Roundhouse checkout
-spinel/                  # Pinned upstream Spinel checkout
-artifacts/               # Generated source, logs, reports, and binaries
-docs/                    # Decisions, compatibility inventory, runbooks
+Rails source -> Roundhouse strict check -> emitted Spinel-compatible Ruby
+             -> Spinel native build -> `blog` executable -> Docker image
 ```
 
-Never edit the upstream compiler checkouts except when explicitly working on an
-upstream patch. Keep local integration scripts and project-specific adapters in
-this repository. Generated files and cloned repositories must not be committed
-unless a later task explicitly asks for a reproducible vendored snapshot.
+Roundhouse analyzes and lowers a supported Rails/Ruby subset for Spinel. Do
+not attempt to compile ordinary Rails source directly with Spinel, and do not
+assume a normal Rails feature is supported just because it runs under MRI.
 
-## Working rules
+## Repository and public-data boundaries
 
-1. Inspect the current working tree and existing instructions before changing
-   anything. Preserve uncommitted user work.
-2. Pin every clone/build to a recorded commit SHA. Record the operating system,
-   compiler, Rust, Ruby, Bundler, Roundhouse, and Spinel versions in a dated
-   report under `docs/` or `artifacts/`.
-3. Treat `backoffice` as the behavioral source of truth. Do not “fix” source
-   compatibility by silently removing endpoints, authorization, validations,
-   jobs, or database behavior.
-4. Never print, commit, or copy secrets from Rails credentials, `.env` files,
-   database URLs, API keys, or production configuration. Use local disposable
-   configuration for experiments.
-5. Do not run database migrations, destructive tasks, seed resets, or network
-   deployment commands without explicit user approval. Compilation work must
-   use an isolated development/test database.
-6. Prefer small, reproducible scripts over undocumented manual commands. Each
-   script must fail clearly and write outputs below `artifacts/`.
+- `simple-api/` is the source of truth.
+- `docker/simple-api/Dockerfile` is the reproducible source-only build path.
+- `scripts/run-simple-api-container.sh` builds and starts the container.
+- `docs/compilation-pipeline.md` documents the architecture.
+- `roundhouse/`, `spinel/`, and `artifacts/` are local clones/build output and
+  are intentionally ignored. Never commit them.
+- Never stage `.env*`, local credentials, API keys, databases, or
+  `simple-api/config/master.key`. The encrypted Rails credentials file may be
+  tracked; its master key may not.
+- If Backoffice work resumes, use an external or ignored local clone. Do not
+  add Backoffice source, configuration, or artifacts to this public project.
 
-## Required workflow
+## Pinned toolchain
 
-### 1. Baseline the Rails application
+The Dockerfile and this guide must remain aligned:
 
-Before compilation work, document how to install dependencies, boot the app,
-run its relevant tests, and exercise at least one representative HTML and/or
-JSON endpoint. Resolve only setup blockers that are needed to establish this
-baseline.
+| Tool | Revision |
+| --- | --- |
+| Roundhouse | `b5cc3fb12eb3434be7691ca429b8bdb43107197a` |
+| Spinel | `d10ef3dd50618b30359c26ebb128c4a58a8f44f9` |
 
-### 2. Analyze before attempting an emit
+Do not update a pin incidentally. Rebuild and run every validation step after a
+toolchain upgrade, then record any compatibility change.
 
-Build Roundhouse using its documented prerequisites (Rust plus `clang` and
-`libclang` on Debian/Ubuntu), then run its checker against the Backoffice
-checkout in continuation mode:
+## Current compatibility contract
+
+These source details are deliberate workarounds for the pinned toolchain:
+
+1. Keep the Rails root route: the generated router expects `RouteTable.root`.
+2. Keep a non-empty schema. The internal `api_runtime_states` table gives the
+   generated runtime typed schema statements; it is not part of the API.
+3. Controllers inherit from `ActionController::Base`, not
+   `ActionController::API`; generated request state currently depends on it.
+4. Fixed JSON responses use pre-encoded `render plain:` plus
+   `content_type: "application/json"`. Inline `render json: { ... }` is not
+   supported by this Spinel target.
+5. Never make a lasting fix in emitted files. Fix the Rails source, a
+   documented transformation, or Roundhouse itself.
+
+The strict checker must have zero errors, warnings, and survey gaps before
+emission.
+
+## Development and direct compilation
+
+Use the Ruby version in `simple-api/.ruby-version`:
 
 ```bash
-cargo run --release --bin roundhouse-check -- --continue /path/to/backoffice
+cd simple-api
+bundle install
+bundle exec rails test
+bundle exec rails server
 ```
 
-Save the complete diagnostics and classify every item as one of:
+When local compiler clones exist, use an ignored output directory:
 
-- unsupported ingestion/lowering coverage in Roundhouse;
-- a Ruby/Rails construct that needs a project-specific rewrite;
-- external runtime dependency (database, Redis, Active Job, mailer, API);
-- environment/setup failure; or
-- confirmed application defect.
+```bash
+roundhouse/target/release/roundhouse-check simple-api
+roundhouse/target/release/roundhouse --target spinel \
+  -o artifacts/simple-api-spinel simple-api
+cd artifacts/simple-api-spinel
+PATH="$PWD/../../spinel/bin:$PATH" spin build
+```
 
-Do not describe a target as compilable until the relevant diagnostics are
-resolved or have an explicit, user-approved scope exclusion.
+The expected executable is `artifacts/simple-api-spinel/build/bin/blog`.
+Generated output is diagnostic/build material, never source to edit or commit.
 
-### 3. Emit through Roundhouse, then compile with Spinel
+## Docker build and deployment
 
-Use Roundhouse's `spinel` target and its matching runtime/scaffold. Compile
-only the emitted/lowered program with a pinned Spinel build. Keep the emitted
-tree, compiler command, stderr, and resulting executable under a uniquely
-named `artifacts/` directory. Do not hand-edit generated output; fix the
-source, a documented transformation, or Roundhouse instead.
+The Docker builder clones the pinned compiler sources, strictly validates the
+app, emits it, and compiles it. A clean checkout therefore needs no local
+binary, Roundhouse checkout, or Spinel checkout.
 
-### 4. Verify behavior, not merely a successful compile
+```bash
+docker build -t simple-api-binary -f docker/simple-api/Dockerfile .
+docker run --rm -p 3000:3000 \
+  -v simple-api-storage:/app/storage \
+  simple-api-binary
+```
 
-For each successful build, verify all applicable layers:
+Or run `./scripts/run-simple-api-container.sh`.
 
-- the native executable starts with explicitly supplied non-secret test config;
-- representative routes return the same status, headers, and canonical JSON or
-  DOM as Rails;
-- authentication/authorization failures remain failures;
-- database reads/writes and validation errors behave equivalently in an
-  isolated test database; and
-- a repeat build from the recorded revisions produces the same result (or any
-  non-determinism is documented).
+The final image runs the executable as non-root `app` and contains only the
+binary, required shared libraries, static public files, optional `db/seed.sql`,
+and the persistent `/app/storage` directory. `PORT` defaults to `3000` and
+`BLOG_DB` defaults to `/app/storage/blog.db`.
 
-Roundhouse's differential comparison tooling is preferred when it supports the
-route. For uncovered behavior, add a focused black-box comparison rather than
-relying on manual browser inspection.
+Smoke-test the running service:
 
-## Reporting and completion criteria
+```bash
+curl -i http://localhost:3000/ping
+curl -i http://localhost:3000/health
+```
 
-Every meaningful attempt must leave a concise report stating:
+Both endpoints must return HTTP 200 and JSON.
 
-- the exact source and tool revisions;
-- commands run and their exit status;
-- supported and unsupported Backoffice surfaces;
-- binary location, checksum, size, and host platform when produced;
-- behavioral test evidence; and
-- the next smallest compatibility task, if any.
+## Required validation and contribution rules
 
-“Build succeeded” alone is not completion. The project reaches its initial
-goal only when a reproducible binary can serve an agreed representative
-Backoffice scope with documented parity against Rails, or when the remaining
-compiler coverage gaps have been evidenced well enough to make a clear
-go/no-go decision.
+For meaningful source or toolchain changes, run the relevant checks:
+
+```bash
+cd simple-api && bundle exec rails test
+cd ..
+roundhouse/target/release/roundhouse-check simple-api
+docker build -t simple-api-binary -f docker/simple-api/Dockerfile .
+docker run --rm -d --name simple-api-smoke -p 3000:3000 simple-api-binary
+curl -f http://localhost:3000/ping
+curl -f http://localhost:3000/health
+docker rm -f simple-api-smoke
+```
+
+If compiler clones are unavailable, the Docker build is the authoritative
+compilation check. Keep `.gitignore` and `.dockerignore` consistent with the
+public-source and secret-handling rules. Run `git diff --check` before commits.
+
+The public repository is
+`https://github.com/eddygarcas/spinel-roundhouse-simple-api`. Review staged
+files for secrets before every push; do not rewrite published history without
+explicit authorization.
