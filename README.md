@@ -158,3 +158,72 @@ AGENTS.md                             Maintainer rules and constraints
 
 See [AGENTS.md](AGENTS.md) for the pinned Roundhouse/Spinel revisions, known
 source constraints, and the full validation workflow.
+
+## Compatibility and troubleshooting
+
+Converting an existing Rails application is not a configuration switch.
+Roundhouse supports a Rails/Ruby subset, lowers that source to a
+Spinel-compatible program, and Spinel compiles the emitted program—not the
+original Rails application.
+
+Start with the strict checker and treat every error, warning, and survey gap as
+a compatibility task:
+
+```bash
+roundhouse/target/release/roundhouse-check path/to/your-rails-app
+```
+
+Do not run Spinel directly against a normal Rails project. After the strict
+check is clean, emit and compile through Roundhouse:
+
+```bash
+roundhouse/target/release/roundhouse --target spinel \
+  -o artifacts/my-api-spinel path/to/your-rails-app
+cd artifacts/my-api-spinel
+PATH="/path/to/spinel/bin:$PATH" spin build
+```
+
+The executable is normally `build/bin/blog`.
+
+### Common changes needed in an existing project
+
+- Isolate or replace highly dynamic Ruby: `eval`, runtime method definitions,
+  extensive metaprogramming, reflection, and runtime constant lookup.
+- Review gems that depend on native extensions, runtime code generation, Redis,
+  background jobs, Action Cable, mailers, external HTTP clients, or cloud SDKs.
+- Keep routes, controller behavior, database access, and schemas explicit so
+  Roundhouse can analyze them. Test Active Record queries, associations,
+  callbacks, and migrations individually rather than assuming all Rails
+  patterns compile.
+- Keep a root route and a non-empty schema. The current generated runtime
+  requires both.
+- Use `ActionController::Base` when the generated request runtime needs the
+  normal controller state; this example cannot use `ActionController::API`.
+- Replace unsupported inline JSON rendering with a fixed encoded response when
+  appropriate:
+
+  ```ruby
+  render plain: '{"status":"ok"}', content_type: "application/json"
+  ```
+
+  instead of:
+
+  ```ruby
+  render json: { status: "ok" }
+  ```
+
+Never hand-edit emitted Spinel files as a permanent fix. Make the correction in
+the Rails source, a documented transformation, or Roundhouse itself, then
+regenerate.
+
+### Recommended migration order
+
+Start with one to three independent API endpoints, make only their dependency
+paths compile-compatible, compile them, and compare the native binary with
+Rails. Then expand endpoint by endpoint. Verify response status, headers and
+body, authentication/authorization failures, validation errors, database
+reads/writes, and environment configuration.
+
+The initial Backoffice survey had dozens of unsupported items, which is normal
+for a non-trivial Rails application: expect an incremental compatibility effort
+rather than a one-command conversion.
