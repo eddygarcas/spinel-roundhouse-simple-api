@@ -1,0 +1,20 @@
+# Local compiler checkouts and generated output
+/roundhouse/
+/spinel/
+/artifacts/
+
+# Rails runtime state and local tooling
+/simple-api/log/*
+/simple-api/tmp/*
+/simple-api/storage/*
+!/simple-api/log/.keep
+!/simple-api/tmp/.keep
+!/simple-api/storage/.keep
+/simple-api/vendor/bundle/
+/simple-api/.env
+/simple-api/.env.*
+/simple-api/config/master.key
+
+# Local agent configuration
+/.agents/
+/.codex/
