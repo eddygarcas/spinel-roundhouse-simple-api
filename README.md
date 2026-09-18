@@ -17,6 +17,36 @@ compiler checkout, or local artifact directory.
 | `GET /ping` | `{"message":"pong"}` |
 | `GET /health` | `{"status":"ok"}` |
 
+## Run the included native binary
+
+The repository includes a verified binary at
+[`bin/simple-api-linux-x86_64`](bin/simple-api-linux-x86_64), so Linux x86_64
+users can try the API without installing Ruby, Roundhouse, Spinel, or Docker.
+It is a dynamically linked ELF binary built for GNU/Linux (kernel 4.4 or
+newer), not a macOS, Windows, or ARM executable.
+
+It requires the standard C/C++ runtime plus the SQLite, jemalloc, and crypt
+shared libraries. On Debian/Ubuntu:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y libsqlite3-0 libjemalloc2 libcrypt1 libstdc++6
+```
+
+Verify the committed checksum, then create a persistent local data directory
+and start it:
+
+```bash
+(cd bin && sha256sum -c SHA256SUMS)
+mkdir -p storage
+PORT=3000 BLOG_DB="$PWD/storage/simple-api.sqlite3" \
+  ./bin/simple-api-linux-x86_64
+```
+
+Use `Ctrl-C` to stop the server. In a second terminal, call `/ping` or
+`/health` as shown below. Rebuild the binary through Docker after any source or
+compiler change; do not edit or patch the committed executable.
+
 ## Run locally with Rails
 
 You need Ruby `4.0.5` (see `simple-api/.ruby-version`) and Bundler.

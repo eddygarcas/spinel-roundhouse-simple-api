@@ -23,6 +23,10 @@ assume a normal Rails feature is supported just because it runs under MRI.
 - `docs/compilation-pipeline.md` documents the architecture.
 - `roundhouse/`, `spinel/`, and `artifacts/` are local clones/build output and
   are intentionally ignored. Never commit them.
+- `bin/simple-api-linux-x86_64` is the one intentional generated exception: a
+  verified, direct-run GNU/Linux x86_64 executable for demonstration. Keep its
+  `bin/SHA256SUMS` entry and `bin/README.md` accurate. Do not add other build
+  trees or unverified binaries.
 - Never stage `.env*`, local credentials, API keys, databases, or
   `simple-api/config/master.key`. The encrypted Rails credentials file may be
   tracked; its master key may not.
@@ -82,6 +86,8 @@ PATH="$PWD/../../spinel/bin:$PATH" spin build
 
 The expected executable is `artifacts/simple-api-spinel/build/bin/blog`.
 Generated output is diagnostic/build material, never source to edit or commit.
+The only exception is the reviewed direct-run binary in `bin/`, which must be
+replaced only by a validated rebuild with its checksum updated.
 
 ## Docker build and deployment
 
